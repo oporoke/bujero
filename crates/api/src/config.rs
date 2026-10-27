@@ -24,12 +24,32 @@ impl FromStr for AppEnv {
     }
 }
 
+/// Log output format: human-readable for development, JSON for production.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogFormat {
+    Pretty,
+    Json,
+}
+
+impl FromStr for LogFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "pretty" => Ok(Self::Pretty),
+            "json" => Ok(Self::Json),
+            other => Err(format!("unknown value '{other}' (expected pretty or json)")),
+        }
+    }
+}
+
 /// All runtime settings, loaded once at startup.
 #[derive(Clone)]
 pub struct Config {
     pub app_env: AppEnv,
     pub host: IpAddr,
     pub port: u16,
+    pub log_format: LogFormat,
     #[expect(dead_code, reason = "used from Step 7 (database pool)")]
     pub database_url: String,
 }
@@ -44,10 +64,17 @@ pub enum ConfigError {
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
+        let app_env = optional("APP_ENV", AppEnv::Development)?;
+        let default_log_format = match app_env {
+            AppEnv::Development => LogFormat::Pretty,
+            AppEnv::Production => LogFormat::Json,
+        };
+
         Ok(Self {
-            app_env: optional("APP_ENV", AppEnv::Development)?,
+            app_env,
             host: optional("APP_HOST", IpAddr::V4(Ipv4Addr::UNSPECIFIED))?,
             port: optional("APP_PORT", 3000)?,
+            log_format: optional("LOG_FORMAT", default_log_format)?,
             database_url: required("DATABASE_URL")?,
         })
     }
@@ -97,5 +124,12 @@ mod tests {
         assert_eq!("production".parse::<AppEnv>(), Ok(AppEnv::Production));
         assert_eq!("DEV".parse::<AppEnv>(), Ok(AppEnv::Development));
         assert!("staging".parse::<AppEnv>().is_err());
+    }
+
+    #[test]
+    fn parses_log_format() {
+        assert_eq!("JSON".parse::<LogFormat>(), Ok(LogFormat::Json));
+        assert_eq!("pretty".parse::<LogFormat>(), Ok(LogFormat::Pretty));
+        assert!("xml".parse::<LogFormat>().is_err());
     }
 }
