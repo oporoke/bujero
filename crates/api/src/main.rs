@@ -1,17 +1,28 @@
+mod config;
+
 use axum::{Router, routing::get};
+use config::Config;
 use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() {
-    let app = app();
+    // Load .env if present (development). Real environment variables always win.
+    dotenvy::dotenv().ok();
 
-    let listener = TcpListener::bind("0.0.0.0:3000")
-        .await
-        .expect("failed to bind 0.0.0.0:3000");
+    let config = Config::from_env().unwrap_or_else(|e| {
+        eprintln!("configuration error: {e}");
+        std::process::exit(1);
+    });
 
-    println!("listening on {}", listener.local_addr().expect("local addr"));
+    let addr = config.addr();
+    let listener = TcpListener::bind(addr).await.unwrap_or_else(|e| {
+        eprintln!("failed to bind {addr}: {e}");
+        std::process::exit(1);
+    });
 
-    axum::serve(listener, app).await.expect("server error");
+    println!("listening on {addr} ({:?})", config.app_env);
+
+    axum::serve(listener, app()).await.expect("server error");
 }
 
 /// Builds the application router. Kept separate from `main` so tests can use it (Step 10).
